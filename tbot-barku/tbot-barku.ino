@@ -3,13 +3,21 @@
 #include <Makeblock.h>
 
 #include "led.h"
+#include "usr.h"
+
+// UltraSonic Radar
+USR Usr;
+bool     usrEnable = false;
+uint8_t  usrUpdateCount; 
+uint32_t usrUpdateDelayMs;
+bool     usrUpdateStatus;
 
 //******************************************************************************
 
 // blue LED as heartbeat
 
 #define LED_BLUE_PIN         13                  
-#define LED_BLUE_ON_OFF_MS   500
+#define LED_BLUE_ON_OFF_MS   700
 
 LED LedBlue;
 
@@ -24,6 +32,29 @@ bool    irRecvValid;
 long    irRecvValidMs;
 
 //******************************************************************************
+
+void printDouble( double val, unsigned int precision){
+// prints val with number of decimal places determine by precision
+// NOTE: precision is 1 followed by the number of zeros for the desired number of decimial places
+// example: printDouble( 3.1415, 100); // prints 3.14 (two decimal places)
+
+    Serial.print (int(val));  //prints the int part
+    Serial.print("."); // print the decimal point
+    
+    unsigned int frac;
+    if(val >= 0)
+        frac = (val - int(val)) * precision;
+    else
+        frac = (int(val)- val ) * precision;
+    int frac1 = frac;
+    while( frac1 /= 10 )
+        precision /= 10;
+    precision /= 10;
+    while(  precision /= 10)
+        Serial.print("0");
+
+    Serial.print(frac,DEC) ;
+}
 
 uint8_t IrRecvCheck(void)
 {
@@ -101,10 +132,10 @@ void setup()
 {
     Serial.begin(9600);                          // configure serial port baud rate and start serial port
     Serial.println("");
-    Serial.println("...ABC...");
+    Serial.println(".ABC.");
 
-    LedBlue.SetPin(LED_BLUE_PIN);               // setup on-board blue led as heartbeat for now
-    LedBlue.SetDuty(LED_BLUE_ON_OFF_MS, LED_BLUE_ON_OFF_MS);
+    LedBlue.setPin(LED_BLUE_PIN);               // setup on-board blue led as heartbeat for now
+    LedBlue.setDuty(LED_BLUE_ON_OFF_MS, LED_BLUE_ON_OFF_MS);
     Serial.println("HEARBEAT OK");
 
     IrRecv.begin();                             // start infrared receiver
@@ -112,6 +143,10 @@ void setup()
     irRecvValid = false;
     irRecvValidMs = 0;
     Serial.println("IR RECV  OK");
+
+    Usr.init(USR_SERVO_1);
+    Usr.setAngleDeg(0);
+    Serial.println("-----");
 }
 
 void loop()
@@ -121,14 +156,18 @@ void loop()
     {
         case 0x00:  
         case 0xFF:              break;  // invalid or no irRecvData
-/*            
+/*
         case IR_BUTTON_UP:      break;
         case IR_BUTTON_DOWN:    break;
         case IR_BUTTON_LEFT:    break;
         case IR_BUTTON_RIGHT:   break;
-      
-        case IR_BUTTON_SETTING: break;
-            
+*/
+        case IR_BUTTON_SETTING: Usr.radarStart();
+                                usrEnable        = true;
+                                usrUpdateCount   = 0;
+                                usrUpdateDelayMs = 0;
+                                break;
+/*
         case IR_BUTTON_A:       break;
         case IR_BUTTON_B:       break;
         case IR_BUTTON_C:       break;
@@ -150,10 +189,40 @@ void loop()
         default:                break;
     }
     
+    // update UltraSonicRadar
+    if (usrEnable == true)
+    {
+        usrUpdateStatus = Usr.usrUpdate(millis());  
+        if (usrUpdateStatus == true)
+        {
+            usrUpdateCount++;
+            usrUpdateDelayMs += Usr.getUpdateDelayMs();
+        }
+        
+        if (Usr.radarIsEnded() == true)
+        {
+            // print the result of USR
+            Serial.print(millis(), DEC);
+            Serial.print(" USR UC=");
+            Serial.print(usrUpdateCount, DEC);
+            Serial.print(" RC=");
+            Serial.print(Usr.getRetryCount(), DEC);
+            Serial.print(" RD=");
+            Serial.print(usrUpdateDelayMs, DEC);
+            Serial.print(" - ");
+            for (uint8_t i = 0; i < USR_STEP_NR; i++)
+            {
+                Serial.print(Usr.getStepDistMm(i), DEC);
+                Serial.print("  ");
+            }
+            Serial.println("");
+            usrEnable = false;
+        }
+    }
+    
     // do more stuff here?
     
-      
     // update heartbeat
-    LedBlue.Update(millis());
+    LedBlue.update(millis());
 }
 
